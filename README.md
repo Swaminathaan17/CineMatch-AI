@@ -2,7 +2,7 @@
 
 > An AI-powered movie recommendation system for cinephiles who spend more time choosing a movie than actually watching one. 🍿🤖
 
-CineMatch-AI is a Machine Learning-based movie recommendation system designed to help users discover movies that actually match their interests. By combining movie metadata, recommendation algorithms, and sentiment analysis, CineSense-AI creates a smarter and more personalized movie discovery experience.
+CineMatch-AI is a Machine Learning-based movie recommendation system designed to help users discover movies that actually match their interests. By combining movie metadata, recommendation algorithms, and sentiment analysis, CineMatch-AI creates a smarter and more personalized movie discovery experience.
 
 Because let's be honest — scrolling through movies for 45 minutes just to rewatch the same movie isn't a recommendation system. 😭🍿
 
@@ -59,7 +59,7 @@ The recommendation system can consider several movie attributes, including:
 - 📊 Popularity
 - 💬 Review Sentiment
 
-By comparing these features, CineSense-AI can identify movies that are similar to the user's interests.
+By comparing these features, CineMatch-AI can identify movies that are similar to the user's interests.
 
 ### Example
 
@@ -105,7 +105,7 @@ This provides additional insight beyond simple numerical ratings and helps under
 
 ## 🎥 TMDB API Integration
 
-CineSense-AI uses the TMDB API to retrieve movie information such as:
+CineMatch-AI uses the TMDB API to retrieve movie information such as:
 
 - Movie Titles
 - Posters
