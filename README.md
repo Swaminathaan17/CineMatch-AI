@@ -179,9 +179,6 @@ CineMatch-AI/
 ├── requirements.txt
 ├── package.json
 └── README.md
-
-Note: Update the structure according to the actual project implementation.
-
 ---
 
 ## ⚙️ Installation
