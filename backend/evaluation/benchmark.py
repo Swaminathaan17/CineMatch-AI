@@ -138,6 +138,10 @@ def _select_stratified_seeds(df: pd.DataFrame, count: int = DEFAULT_SEED_COUNT, 
 
 def _build_relevance_cache(df: pd.DataFrame):
     """Precompute compact token sets so large benchmarks avoid O(n^2) parsing overhead."""
+    overview_vec = TfidfVectorizer(stop_words="english", max_features=5000)
+    overview_texts = df.get("overview", pd.Series([""] * len(df))).fillna("").str.strip().str.lower()
+    overview_mat = overview_vec.fit_transform(overview_texts)
+
     cache = {}
     for idx, row in df.iterrows():
         cache[int(row["id"])] = {
@@ -146,29 +150,51 @@ def _build_relevance_cache(df: pd.DataFrame):
             "director": _tokens(row.get("director")),
             "cast": _tokens(row.get("cast")),
         }
-    return cache
+    return cache, overview_mat
 
 
-def _gold_relevance_cached(seed_id: int, candidate_id: int, cache: dict) -> int:
+def _gold_relevance_cached(seed_id: int, candidate_id: int, cache: dict, overview_sim: float | None = None) -> int:
     if seed_id == candidate_id:
         return 0
     seed, cand = cache[seed_id], cache[candidate_id]
     shared_genres = len(seed["genres"] & cand["genres"])
     same_director = bool(seed["director"] & cand["director"])
     shared_cast = len(seed["cast"] & cand["cast"])
+
+    meta_score = 0
     if same_director and shared_genres >= 1:
-        return 3
-    if shared_genres >= 3:
-        return 3
-    if shared_genres >= 2 or shared_cast >= 2:
-        return 2
-    if shared_genres >= 1 or shared_cast >= 1:
-        return 1
+        meta_score = 3
+    elif shared_genres >= 3:
+        meta_score = 3
+    elif shared_genres >= 2 or shared_cast >= 2:
+        meta_score = 2
+    elif shared_genres >= 1 or shared_cast >= 1:
+        meta_score = 1
+
+    if meta_score > 0:
+        return meta_score
+
+    if overview_sim is not None:
+        if overview_sim >= 0.35:
+            return 2
+        if overview_sim >= 0.20:
+            return 1
+
     return 0
 
 
-def _metric_row(recommendations: list[int], seed_id: int, df: pd.DataFrame, cache: dict, k: int) -> dict:
-    relevant = [_gold_relevance_cached(seed_id, rid, cache) for rid in recommendations]
+def _metric_row(recommendations: list[int], seed_id: int, df: pd.DataFrame, cache: dict, k: int, overview_matrix=None, id_to_idx=None) -> dict:
+    if overview_matrix is not None and id_to_idx is not None and seed_id in id_to_idx:
+        seed_idx = id_to_idx[seed_id]
+        cand_idxs = [id_to_idx[rid] for rid in recommendations if rid in id_to_idx]
+        if cand_idxs:
+            sims = cosine_similarity(overview_matrix[seed_idx], overview_matrix[cand_idxs])[0]
+            sim_map = {recommendations[i]: float(sims[i]) for i in range(min(len(cand_idxs), len(recommendations)))}
+        else:
+            sim_map = {}
+    else:
+        sim_map = {}
+    relevant = [_gold_relevance_cached(seed_id, rid, cache, sim_map.get(rid)) for rid in recommendations]
     total_relevant = sum(
         _gold_relevance_cached(seed_id, int(candidate_id), cache) > 0
         for candidate_id in cache
@@ -257,7 +283,7 @@ def run_benchmark(
     max_k = max(eval_ks)
     engine = ContentSimilarityEngine(df)
     _, baseline_matrix = _fit_metadata_baseline(df)
-    cache = _build_relevance_cache(df)
+    cache, overview_matrix = _build_relevance_cache(df)
     by_id_idx = {int(movie_id): idx for idx, movie_id in enumerate(df["id"].astype(int))}
     current_rankings = _batch_rank_current(engine, seed_ids, max_k)
     baseline_rankings = _batch_rank_baseline(baseline_matrix, df, seed_ids, max_k)
@@ -269,8 +295,8 @@ def run_benchmark(
         per_k = {}
         for current_k in eval_ks:
             per_k[str(current_k)] = {
-                "current": _metric_row(current_ids[:current_k], seed_id, df, cache, current_k),
-                "baseline": _metric_row(baseline_ids[:current_k], seed_id, df, cache, current_k),
+                "current": _metric_row(current_ids[:current_k], seed_id, df, cache, current_k, overview_matrix, by_id_idx),
+                "baseline": _metric_row(baseline_ids[:current_k], seed_id, df, cache, current_k, overview_matrix, by_id_idx),
             }
         rows.append({"seed_id": seed_id, "title": seed["title"], "metrics": per_k})
 

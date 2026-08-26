@@ -117,7 +117,7 @@ class NLQueryEngine:
             ),
             axis=1,
         )
-        self._tfidf_vectorizer = TfidfVectorizer(stop_words="english", max_features=3000)
+        self._tfidf_vectorizer = TfidfVectorizer(stop_words="english", max_features=5000, ngram_range=(1, 2), sublinear_tf=True)
         self._tfidf_matrix = self._tfidf_vectorizer.fit_transform(text_source)
 
     def search(self, query: str, top_n: int = 10) -> dict:

@@ -11,11 +11,14 @@ Phase 5-quality retrieval improvements applied to Phase 3/4:
 """
 from __future__ import annotations
 
+import re
 import numpy as np
 from scipy.sparse import csr_matrix
 import pandas as pd
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
+
+_HTML_ENTITY = re.compile(r'&[#\w]+;')
 
 
 def _clean_list_field(value) -> list[str]:
@@ -42,7 +45,9 @@ def build_soup(row: pd.Series) -> str:
 
 
 def _overview(row: pd.Series) -> str:
-    return str(row.get("overview") or "").strip().lower()
+    text = str(row.get("overview") or "").strip().lower()
+    text = _HTML_ENTITY.sub(' ', text)
+    return re.sub(r'\s+', ' ', text).strip()
 
 
 class ContentSimilarityEngine:

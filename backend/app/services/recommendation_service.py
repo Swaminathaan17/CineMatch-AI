@@ -159,7 +159,7 @@ class RecommendationService:
                 continue
             pref = preference_scores.get(movie_id, 0.0)
             score = compute_hybrid_score(
-                content_similarity=pref,
+                content_similarity=0.0,
                 sentiment_positive_pct=None,
                 rating=float(row.get("vote_average") or 0),
                 popularity=float(row.get("popularity") or 0),
