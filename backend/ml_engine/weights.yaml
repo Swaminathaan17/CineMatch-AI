@@ -1,0 +1,8 @@
+# Accuracy-first ranking weights. Content remains dominant so metadata quality
+# cannot be overwhelmed by popularity or freshness.
+content_similarity: 0.42
+sentiment: 0.12
+rating: 0.12
+popularity: 0.06
+preference_match: 0.24
+recency: 0.04

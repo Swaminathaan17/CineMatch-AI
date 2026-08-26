@@ -1,0 +1,279 @@
+{
+  "benchmark": {
+    "dataset": "/mnt/data/bench_work/movie-rec-system/data/movies_dataset.csv",
+    "seed_count": 11,
+    "k": 10,
+    "label_definition": "Metadata-only proxy: shared genres/cast/director; independent of recommender score.",
+    "warning": "This is an offline proxy benchmark, not human-judged relevance. Use human evaluation before claiming production accuracy."
+  },
+  "metrics": {
+    "precision": {
+      "current": 0.9364,
+      "current_ci95": [
+        0.8727,
+        0.9818
+      ],
+      "baseline": 0.9182,
+      "baseline_ci95": [
+        0.8545,
+        0.9727
+      ],
+      "delta": 0.0182
+    },
+    "recall": {
+      "current": 0.0033,
+      "current_ci95": [
+        0.0023,
+        0.0047
+      ],
+      "baseline": 0.0033,
+      "baseline_ci95": [
+        0.0022,
+        0.0047
+      ],
+      "delta": 0.0001
+    },
+    "ndcg": {
+      "current": 0.9668,
+      "current_ci95": [
+        0.9272,
+        0.9946
+      ],
+      "baseline": 0.9675,
+      "baseline_ci95": [
+        0.93,
+        0.9907
+      ],
+      "delta": -0.0008
+    },
+    "map": {
+      "current": 0.9481,
+      "current_ci95": [
+        0.8924,
+        0.9915
+      ],
+      "baseline": 0.9484,
+      "baseline_ci95": [
+        0.8968,
+        0.9856
+      ],
+      "delta": -0.0003
+    },
+    "mrr": {
+      "current": 0.9545,
+      "current_ci95": [
+        0.8636,
+        1.0
+      ],
+      "baseline": 0.9545,
+      "baseline_ci95": [
+        0.8636,
+        1.0
+      ],
+      "delta": 0.0
+    }
+  },
+  "diagnostics": {
+    "catalog_coverage_at_k": 0.012398
+  },
+  "cases": [
+    {
+      "seed_id": 27205,
+      "title": "Inception",
+      "current": {
+        "precision": 1.0,
+        "recall": 0.002728512960436562,
+        "ndcg": 1.0,
+        "map": 1.0,
+        "mrr": 1.0
+      },
+      "baseline": {
+        "precision": 1.0,
+        "recall": 0.002728512960436562,
+        "ndcg": 1.0,
+        "map": 1.0,
+        "mrr": 1.0
+      }
+    },
+    {
+      "seed_id": 157336,
+      "title": "Interstellar",
+      "current": {
+        "precision": 0.7,
+        "recall": 0.001610305958132045,
+        "ndcg": 0.9047038677920017,
+        "map": 0.8260204081632653,
+        "mrr": 1.0
+      },
+      "baseline": {
+        "precision": 0.7,
+        "recall": 0.001610305958132045,
+        "ndcg": 0.972664731083356,
+        "map": 0.9095238095238096,
+        "mrr": 1.0
+      }
+    },
+    {
+      "seed_id": 155,
+      "title": "The Dark Knight",
+      "current": {
+        "precision": 0.9,
+        "recall": 0.0018101367658889783,
+        "ndcg": 0.9667147927059906,
+        "map": 0.9060405643738976,
+        "mrr": 1.0
+      },
+      "baseline": {
+        "precision": 0.9,
+        "recall": 0.0018101367658889783,
+        "ndcg": 0.9842184869190973,
+        "map": 0.9467813051146384,
+        "mrr": 1.0
+      }
+    },
+    {
+      "seed_id": 286217,
+      "title": "The Martian",
+      "current": {
+        "precision": 1.0,
+        "recall": 0.00230467849734962,
+        "ndcg": 1.0,
+        "map": 1.0,
+        "mrr": 1.0
+      },
+      "baseline": {
+        "precision": 1.0,
+        "recall": 0.00230467849734962,
+        "ndcg": 1.0,
+        "map": 1.0,
+        "mrr": 1.0
+      }
+    },
+    {
+      "seed_id": 597,
+      "title": "Titanic",
+      "current": {
+        "precision": 0.8,
+        "recall": 0.0017509301816590063,
+        "ndcg": 0.8030216438307117,
+        "map": 0.7347222222222223,
+        "mrr": 0.5
+      },
+      "baseline": {
+        "precision": 0.8,
+        "recall": 0.0017509301816590063,
+        "ndcg": 0.7968698714445454,
+        "map": 0.7347222222222223,
+        "mrr": 0.5
+      }
+    },
+    {
+      "seed_id": 603,
+      "title": "The Matrix",
+      "current": {
+        "precision": 0.9,
+        "recall": 0.004182156133828996,
+        "ndcg": 0.989456211408497,
+        "map": 0.9626543209876544,
+        "mrr": 1.0
+      },
+      "baseline": {
+        "precision": 0.9,
+        "recall": 0.004182156133828996,
+        "ndcg": 0.9809350345544577,
+        "map": 0.9467813051146384,
+        "mrr": 1.0
+      }
+    },
+    {
+      "seed_id": 19995,
+      "title": "Avatar",
+      "current": {
+        "precision": 1.0,
+        "recall": 0.0035919540229885057,
+        "ndcg": 1.0,
+        "map": 1.0,
+        "mrr": 1.0
+      },
+      "baseline": {
+        "precision": 0.8,
+        "recall": 0.0028735632183908046,
+        "ndcg": 0.9670943502702473,
+        "map": 0.8951388888888888,
+        "mrr": 1.0
+      }
+    },
+    {
+      "seed_id": 98,
+      "title": "Gladiator",
+      "current": {
+        "precision": 1.0,
+        "recall": 0.002177226213803614,
+        "ndcg": 1.0,
+        "map": 1.0,
+        "mrr": 1.0
+      },
+      "baseline": {
+        "precision": 1.0,
+        "recall": 0.002177226213803614,
+        "ndcg": 1.0,
+        "map": 1.0,
+        "mrr": 1.0
+      }
+    },
+    {
+      "seed_id": 862,
+      "title": "Toy Story",
+      "current": {
+        "precision": 1.0,
+        "recall": 0.003402517863218782,
+        "ndcg": 0.9724705483646786,
+        "map": 1.0,
+        "mrr": 1.0
+      },
+      "baseline": {
+        "precision": 1.0,
+        "recall": 0.003402517863218782,
+        "ndcg": 0.9619373478643829,
+        "map": 1.0,
+        "mrr": 1.0
+      }
+    },
+    {
+      "seed_id": 12,
+      "title": "Finding Nemo",
+      "current": {
+        "precision": 1.0,
+        "recall": 0.010101010101010102,
+        "ndcg": 0.9981666155888351,
+        "map": 1.0,
+        "mrr": 1.0
+      },
+      "baseline": {
+        "precision": 1.0,
+        "recall": 0.010101010101010102,
+        "ndcg": 0.979174059915808,
+        "map": 1.0,
+        "mrr": 1.0
+      }
+    },
+    {
+      "seed_id": 238,
+      "title": "The Godfather",
+      "current": {
+        "precision": 1.0,
+        "recall": 0.002826455624646693,
+        "ndcg": 1.0,
+        "map": 1.0,
+        "mrr": 1.0
+      },
+      "baseline": {
+        "precision": 1.0,
+        "recall": 0.002826455624646693,
+        "ndcg": 1.0,
+        "map": 1.0,
+        "mrr": 1.0
+      }
+    }
+  ]
+}

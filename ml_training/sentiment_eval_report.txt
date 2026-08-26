@@ -1,0 +1,18 @@
+Dataset: data/imdb_50k.csv (50000 rows, 40000 train / 10000 test)
+5-fold CV accuracy: 0.8867 (+/- 0.0023)
+Held-out test accuracy: 0.8899
+Held-out test weighted F1: 0.8899
+
+Classification report:
+              precision    recall  f1-score   support
+
+    negative       0.90      0.88      0.89      5000
+    positive       0.88      0.90      0.89      5000
+
+    accuracy                           0.89     10000
+   macro avg       0.89      0.89      0.89     10000
+weighted avg       0.89      0.89      0.89     10000
+
+Confusion matrix:
+[[4410  590]
+ [ 511 4489]]
