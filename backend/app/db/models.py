@@ -87,7 +87,28 @@ class LibraryMovie(Base):
     poster_path = Column(String, nullable=True)
     backdrop_path = Column(String, nullable=True)
     release_date = Column(String, nullable=True)
+    runtime = Column(Integer, nullable=True)  # minutes; None if TMDB has no value
     vote_average = Column(Float, default=0.0)
     popularity = Column(Float, default=0.0)
     added_at = Column(DateTime, default=utcnow)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
+
+
+class MovieAsset(Base):
+    """Enrichment cache for original-catalogue movie assets backfilled from TMDB.
+
+    The source CSV stays authoritative and immutable; this table only fills
+    asset gaps (poster/backdrop/release date/runtime) for catalogue movies so
+    a backfill never rewrites or deletes anything else about a movie. Rows are
+    keyed by the same TMDB id used across the movie namespace.
+    """
+
+    __tablename__ = "movie_assets"
+
+    tmdb_id = Column(Integer, primary_key=True)
+    title = Column(String, nullable=False)
+    poster_path = Column(String, nullable=True)
+    backdrop_path = Column(String, nullable=True)
+    release_date = Column(String, nullable=True)
+    runtime = Column(Integer, nullable=True)
     updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)

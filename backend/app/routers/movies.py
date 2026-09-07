@@ -1,8 +1,9 @@
 from fastapi import APIRouter, HTTPException, Depends
 
 from app.services.recommendation_service import recommendation_service
-from app.services.tmdb_client import tmdb_client, TMDBError
+from app.services.tmdb_client import tmdb_client, TMDBError, TMDBNotFoundError
 from app.services.data_prep import tmdb_movie_to_row
+from app.services.tmdb_details import parse_watch_providers, select_trailer
 from app.config import settings
 from app.db.session import get_db
 from app.services.library_service import upsert_library_movie
@@ -174,10 +175,30 @@ def get_movie(movie_id: int):
 
 @router.get("/{movie_id}/tmdb-detail")
 async def get_tmdb_detail(movie_id: int):
-    """Full live TMDB detail, even when the movie has not been imported yet."""
+    """Full live TMDB detail, even when the movie has not been imported yet.
+
+    Response shape is the normalized movie row (id, title, overview, genres,
+    cast, director, keywords, poster_path, backdrop_path, release_date,
+    runtime, vote_average, popularity) plus two additive fields:
+    - trailer: the best matching video (deterministic selection) or null
+    - watch_providers: justwatch/TMDB availability for the configured region,
+      or null when TMDB reports none so we never claim a movie is streamable.
+    """
     try:
         data = await tmdb_client.get_movie(movie_id)
-        row = tmdb_movie_to_row(data)
-        return {**row, "source": "tmdb_external"}
+    except TMDBNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
     except TMDBError as e:
         raise HTTPException(status_code=502, detail=str(e))
+
+    row = tmdb_movie_to_row(data)
+    return {
+        **row,
+        "source": "tmdb_external",
+        "runtime": row.get("runtime"),
+        "trailer": select_trailer((data.get("videos") or {}).get("results", [])),
+        "watch_providers": parse_watch_providers(
+            data.get("watch/providers"),
+            settings.tmdb_watch_provider_region,
+        ),
+    }

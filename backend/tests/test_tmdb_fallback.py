@@ -15,9 +15,13 @@ from app import config
 
 @pytest.fixture(autouse=True)
 def _reset_tmdb_key():
+    from app.services.tmdb_client import tmdb_client as shared_client
+
     original = config.settings.tmdb_api_key
+    shared_client.clear_cache()
     yield
     config.settings.tmdb_api_key = original
+    shared_client.clear_cache()
 
 
 def test_connection_failure_wraps_in_tmdberror_not_raw_exception():
@@ -29,11 +33,165 @@ def test_connection_failure_wraps_in_tmdberror_not_raw_exception():
     import asyncio
 
     async def run():
-        client = TMDBClient()
+        client = TMDBClient(max_retries=2, retry_base_delay=0.01, retry_max_delay=0.01)
         config.settings.tmdb_api_key = "fake_key_for_test"
-        with patch.object(httpx.AsyncClient, "get", AsyncMock(side_effect=httpx.ConnectTimeout("simulated"))):
+        with patch.object(httpx.AsyncClient, "get", AsyncMock(side_effect=httpx.ConnectTimeout("simulated"))) as mock_get:
             with pytest.raises(TMDBError):
                 await client.search_movies("test")
+            assert mock_get.call_count == 2  # initial attempt + 1 retry, then give up
+
+    asyncio.run(run())
+
+
+def test_not_found_error_is_distinguished_from_service_error():
+    """404s and service errors are distinct: TMDBNotFoundError is a TMDBError
+    (so existing 'except TMDBError' callers still catch it) but is not the
+    same class, letting callers special-case 'resource missing'."""
+    from app.services.tmdb_client import TMDBError, TMDBNotFoundError
+
+    assert issubclass(TMDBNotFoundError, TMDBError)
+    assert TMDBNotFoundError.__name__ != "TMDBError"
+
+
+def test_retries_transient_status_then_succeeds():
+    """A transient 5xx should be retried (exponential backoff) and, if a later
+    attempt succeeds, the call returns the payload rather than erroring."""
+    from app.services.tmdb_client import TMDBClient
+    import asyncio
+
+    async def run():
+        client = TMDBClient(max_retries=3, retry_base_delay=0.01, retry_max_delay=0.01)
+        config.settings.tmdb_api_key = "fake_key_for_test"
+        req = httpx.Request("GET", "http://tmdb")
+        flaky = AsyncMock(
+            side_effect=[
+                httpx.Response(503, request=req, json={}),
+                httpx.Response(502, request=req, json={}),
+                httpx.Response(200, request=req, json={"results": [{"id": 1}]}),
+            ]
+        )
+        with patch.object(httpx.AsyncClient, "get", flaky):
+            data = await client.search_movies("retry_me")
+        assert data == {"results": [{"id": 1}]}
+        assert flaky.call_count == 3
+
+    asyncio.run(run())
+
+
+def test_429_respects_retry_after_then_succeeds():
+    """429 should honor Retry-After and eventually succeed."""
+    from app.services.tmdb_client import TMDBClient
+    import asyncio
+
+    async def run():
+        client = TMDBClient(max_retries=3, retry_base_delay=0.01, retry_max_delay=0.01)
+        config.settings.tmdb_api_key = "fake_key_for_test"
+        req = httpx.Request("GET", "http://tmdb")
+        rate_limited = AsyncMock(
+            side_effect=[
+                httpx.Response(429, request=req, headers={"Retry-After": "0"}, json={}),
+                httpx.Response(200, request=req, json={"results": [{"id": 7}]}),
+            ]
+        )
+        with patch.object(httpx.AsyncClient, "get", rate_limited):
+            data = await client.search_movies("rate_limited_query")
+        assert data == {"results": [{"id": 7}]}
+        assert rate_limited.call_count == 2
+
+    asyncio.run(run())
+
+
+def test_no_retry_on_400():
+    """A hard 400 is a caller/protocol error - must not be retried."""
+    from app.services.tmdb_client import TMDBClient, TMDBError
+    import asyncio
+
+    async def run():
+        client = TMDBClient(max_retries=3, retry_base_delay=0.01, retry_max_delay=0.01)
+        config.settings.tmdb_api_key = "fake_key_for_test"
+        req = httpx.Request("GET", "http://tmdb")
+        bad = AsyncMock(return_value=httpx.Response(400, request=req, text="bad request"))
+        with patch.object(httpx.AsyncClient, "get", bad):
+            with pytest.raises(TMDBError):
+                await client.search_movies("bad_query")
+        assert bad.call_count == 1
+
+    asyncio.run(run())
+
+
+def test_no_retry_on_404_and_raises_not_found_error():
+    """A 404 is not retried and is raised as TMDBNotFoundError (a TMDBError
+    subclass) so callers can distinguish 'not found' from service failures."""
+    from app.services.tmdb_client import TMDBClient, TMDBNotFoundError, TMDBError
+    import asyncio
+
+    async def run():
+        client = TMDBClient(max_retries=3, retry_base_delay=0.01, retry_max_delay=0.01)
+        config.settings.tmdb_api_key = "fake_key_for_test"
+        req = httpx.Request("GET", "http://tmdb")
+        missing = AsyncMock(return_value=httpx.Response(404, request=req, text="not found"))
+        with patch.object(httpx.AsyncClient, "get", missing):
+            with pytest.raises(TMDBNotFoundError):
+                await client.get_movie(123456789)
+        assert missing.call_count == 1
+
+    asyncio.run(run())
+
+
+def test_successful_get_is_cached_within_ttl():
+    """Successful GET responses are cached: a second identical call within the
+    TTL must not hit the network again."""
+    from app.services.tmdb_client import TMDBClient
+    import asyncio
+
+    async def run():
+        client = TMDBClient(max_retries=1, cache_ttl=60)
+        config.settings.tmdb_api_key = "fake_key_for_test"
+        req = httpx.Request("GET", "http://tmdb")
+        ok = AsyncMock(return_value=httpx.Response(200, request=req, json={"results": [{"id": 3}]}))
+        with patch.object(httpx.AsyncClient, "get", ok):
+            first = await client.search_movies("cached_query")
+            second = await client.search_movies("cached_query")
+        assert first == second == {"results": [{"id": 3}]}
+        assert ok.call_count == 1
+
+    asyncio.run(run())
+
+
+def test_cache_respects_ttl():
+    """Once the TTL expires the cache must re-query the network."""
+    from app.services.tmdb_client import TMDBClient
+    import asyncio
+
+    async def run():
+        client = TMDBClient(max_retries=1, cache_ttl=0.05)
+        config.settings.tmdb_api_key = "fake_key_for_test"
+        req = httpx.Request("GET", "http://tmdb")
+        ok = AsyncMock(return_value=httpx.Response(200, request=req, json={"results": [{"id": 4}]}))
+        with patch.object(httpx.AsyncClient, "get", ok):
+            await client.search_movies("ttl_query")
+            await asyncio.sleep(0.06)
+            await client.search_movies("ttl_query")
+        assert ok.call_count == 2
+
+    asyncio.run(run())
+
+
+def test_clear_cache_forces_new_request():
+    """clear_cache() must drop cached responses so the next call re-fetches."""
+    from app.services.tmdb_client import TMDBClient
+    import asyncio
+
+    async def run():
+        client = TMDBClient(max_retries=1, cache_ttl=60)
+        config.settings.tmdb_api_key = "fake_key_for_test"
+        req = httpx.Request("GET", "http://tmdb")
+        ok = AsyncMock(return_value=httpx.Response(200, request=req, json={"results": [{"id": 5}]}))
+        with patch.object(httpx.AsyncClient, "get", ok):
+            await client.search_movies("clear_cache_query")
+            client.clear_cache()
+            await client.search_movies("clear_cache_query")
+        assert ok.call_count == 2
 
     asyncio.run(run())
 

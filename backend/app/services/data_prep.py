@@ -35,6 +35,7 @@ def tmdb_movie_to_row(movie_json: dict) -> dict:
         "poster_path": movie_json.get("poster_path"),
         "backdrop_path": movie_json.get("backdrop_path"),
         "release_date": movie_json.get("release_date", ""),
+        "runtime": movie_json.get("runtime"),
         "vote_average": movie_json.get("vote_average", 0),
         "popularity": movie_json.get("popularity", 0),
     }

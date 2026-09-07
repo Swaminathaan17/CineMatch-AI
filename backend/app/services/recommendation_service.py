@@ -1,12 +1,13 @@
 """Recommendation service backed by the original catalogue plus Phase 2 library movies."""
 from __future__ import annotations
 
+import math
 from pathlib import Path
 
 import pandas as pd
 from sqlalchemy.orm import Session
 
-from app.db.models import LibraryMovie
+from app.db.models import LibraryMovie, MovieAsset
 from app.db.session import SessionLocal
 from app.services.library_service import library_movie_to_row
 from ml_engine.content_similarity import ContentSimilarityEngine
@@ -15,6 +16,35 @@ from ml_engine.nl_query_parser import NLQueryEngine
 from ml_engine.hybrid_ranker import compute_hybrid_score, recency_score
 
 DATA_PATH = Path(__file__).resolve().parent.parent.parent.parent / "data"
+
+
+def _is_blank(value) -> bool:
+    """True for None, NaN, and empty strings - used to decide whether a local
+    asset field can be enriched without overwriting real data."""
+    if value is None:
+        return True
+    if isinstance(value, float) and value != value:  # NaN is never equal to itself
+        return True
+    return str(value).strip() == ""
+
+
+def _json_safe(value):
+    """Convert a pandas/numpy cell into a plain JSON-friendly value.
+
+    Merged rows (CSV ∪ library/asset overlays) can carry NaN/Inf floats in
+    columns the other frame lacks; Starlette's JSON encoder (allow_nan=False)
+    rejects those as 500s. Map non-finite floats to None and unwrap numpy
+    scalars to native Python types.
+    """
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            return None
+        return value
+    if hasattr(value, "item"):
+        value = value.item()
+        if isinstance(value, float) and not math.isfinite(value):
+            return None
+    return value
 
 
 class RecommendationService:
@@ -30,6 +60,14 @@ class RecommendationService:
         for col in ["genres", "cast", "director", "keywords"]:
             if col in df.columns:
                 df[col] = df[col].fillna("").astype(str).str.replace(r"[\[\]'\"]", "", regex=True)
+        # runtime only exists for TMDB-imported rows; base-CSV rows get NaN when
+        # the frames are concatenated. Normalize to an int or None so the JSON
+        # response never serializes a NaN (Starlette rejects those) and never
+        # fabricates a runtime for catalogue movies.
+        if "runtime" in df.columns:
+            df["runtime"] = df["runtime"].apply(
+                lambda v: int(v) if pd.notna(v) else None
+            )
         if "source" not in df.columns:
             df["source"] = "local"
         return df
@@ -65,9 +103,55 @@ class RecommendationService:
                 base_df = pd.concat([base_df, dynamic_df], ignore_index=True, sort=False)
 
         self._df = base_df
+        self._apply_asset_overlay()
         self._engine = ContentSimilarityEngine(self._df)
         self._personalization = PersonalizationEngine(self._engine)
         self._nl_engine = NLQueryEngine(self._df)
+
+    def _apply_asset_overlay(self):
+        """Phase 1 Step 3: fill asset gaps for original-catalogue rows from the
+        backfill enrichment table (movie_assets).
+
+        Only blank values are overwritten - everything else on the local row
+        stays authoritative. The base CSV has no poster/backdrop/release/runtime
+        columns at all, so the columns are materialized here (None by default);
+        before this, catalogue rows simply had no asset fields. If the table is
+        missing (old DB not yet migrated), the overlay is a no-op.
+        """
+        try:
+            db = SessionLocal()
+            try:
+                assets = db.query(MovieAsset).all()
+            finally:
+                db.close()
+        except Exception:
+            assets = []
+
+        for col in ("poster_path", "backdrop_path", "release_date", "runtime"):
+            if col not in self._df.columns:
+                self._df[col] = None
+
+        for asset in assets:
+            match = self._df[self._df["id"] == asset.tmdb_id]
+            if match.empty:
+                continue
+            idx = match.index[0]
+            if _is_blank(self._df.at[idx, "poster_path"]):
+                self._df.at[idx, "poster_path"] = asset.poster_path
+            if _is_blank(self._df.at[idx, "backdrop_path"]):
+                self._df.at[idx, "backdrop_path"] = asset.backdrop_path
+            if _is_blank(self._df.at[idx, "release_date"]):
+                self._df.at[idx, "release_date"] = asset.release_date
+            if _is_blank(self._df.at[idx, "runtime"]):
+                self._df.at[idx, "runtime"] = asset.runtime
+
+        # Normalize NaN (created when frames with and without asset columns are
+        # concatenated) to None so JSON serialization never hits a float NaN.
+        for col in ("poster_path", "backdrop_path", "release_date", "runtime"):
+            if col in self._df.columns:
+                self._df[col] = self._df[col].apply(
+                    lambda v: None if _is_blank(v) else v
+                )
 
     def refresh(self):
         """Rebuild the in-memory TF-IDF/NL indexes after a library mutation."""
@@ -213,7 +297,7 @@ class RecommendationService:
         row = match.iloc[0].to_dict()
         row["id"] = int(row["id"])
         row["source"] = row.get("source", "local")
-        return row
+        return {k: _json_safe(v) for k, v in row.items()}
 
     def list_movies(self) -> list[dict]:
         self._load()

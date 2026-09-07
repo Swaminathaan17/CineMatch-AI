@@ -1,63 +1,104 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api } from "../services/api";
+import { enrichMovies } from "../services/movieEnrichment";
 import FilmstripRow from "../components/movie/FilmstripRow";
 import LoadingSkeleton from "../components/ui/LoadingSkeleton";
+import ErrorState from "../components/ui/ErrorState";
 
 export default function Home() {
   const [allMovies, setAllMovies] = useState([]);
   const [personalized, setPersonalized] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [likedIds, setLikedIds] = useState(new Set());
+  const [watchlistIds, setWatchlistIds] = useState(new Set());
+
+  const load = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const movies = await enrichMovies(await api.getTrending(20));
+      setAllMovies(movies);
+
+      const rec = await api.getPersonalized(10);
+      setPersonalized({ ...rec, results: await enrichMovies(rec.results || []) });
+
+      const prefs = await api.getPreferences().catch(() => null);
+      if (prefs?.liked_movie_ids) setLikedIds(new Set(prefs.liked_movie_ids));
+
+      const wl = await api.getWatchlist().catch(() => ({ results: [] }));
+      setWatchlistIds(new Set((wl.results || []).map((m) => Number(m.id))));
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    async function load() {
-      try {
-        const movies = await api.getTrending(20);
-        setAllMovies(movies);
-
-        const rec = await api.getPersonalized(10);
-        setPersonalized(rec);
-      } catch (e) {
-        setError(e.message);
-      } finally {
-        setLoading(false);
-      }
-    }
     load();
   }, []);
 
+  const personalizedMovies = useMemo(() => {
+    return (personalized?.results || []).map((r) => ({
+      id: r.id,
+      title: r.title,
+      poster_path: r.poster_path || null,
+      release_date: r.release_date || "",
+      source: r.source || "local",
+      reasons: r.reasons || [],
+      runtime: r.runtime ?? null,
+      vote_average: r.vote_average ?? null,
+      genres: r.genres ?? "",
+    }));
+  }, [personalized]);
+
+  const personalizedScores = useMemo(() => {
+    return (personalized?.results || []).reduce((acc, r) => {
+      if (r.match_percentage != null) {
+        acc[r.id] = r.match_percentage;
+      } else if (r.preference_match_score != null) {
+        acc[r.id] = Math.round(r.preference_match_score * 100);
+      }
+      return acc;
+    }, {});
+  }, [personalized]);
+
+  const toggleLike = async (id) => {
+    await api.likeMovie(id);
+    setLikedIds((prev) => {
+      const next = new Set(prev);
+      next.add(Number(id));
+      return next;
+    });
+  };
+
+  const toggleWatchlist = async (id, title) => {
+    const numericId = Number(id);
+    if (watchlistIds.has(numericId)) {
+      await api.removeFromWatchlist(numericId);
+      setWatchlistIds((prev) => {
+        const next = new Set(prev);
+        next.delete(numericId);
+        return next;
+      });
+    } else {
+      await api.addToWatchlist(numericId, title);
+      setWatchlistIds((prev) => new Set(prev).add(numericId));
+    }
+  };
+
   if (error) {
     return (
-      <div className="min-h-screen flex items-center justify-center px-6">
-        <div className="text-center">
-          <p className="font-display text-xl text-ivory mb-2">Can't reach the API</p>
-          <p className="text-smoke text-sm">{error}</p>
-          <p className="text-smoke text-xs mt-4">
-            Check that the backend is running and VITE_API_URL is set correctly.
-          </p>
-        </div>
+      <div className="min-h-screen pt-24 px-6">
+        <ErrorState
+          title="Can't reach the API"
+          message="Check that the backend is running and VITE_API_URL is set correctly."
+          onRetry={load}
+        />
       </div>
     );
   }
-
-  // personalized.results shape differs slightly (id/title/preference_match_score
-  // vs the plain movie list) - map to what FilmstripRow expects
-  const personalizedMovies = personalized?.results?.map((r) => ({
-    id: r.id,
-    title: r.title,
-    poster_path: r.poster_path || null,
-    release_date: r.release_date || "",
-    source: r.source || "local",
-    reasons: r.reasons || [],
-  }));
-  const personalizedScores = personalized?.results?.reduce((acc, r) => {
-    if (r.match_percentage != null) {
-      acc[r.id] = r.match_percentage;
-    } else if (r.preference_match_score != null) {
-      acc[r.id] = Math.round(r.preference_match_score * 100);
-    }
-    return acc;
-  }, {});
 
   return (
     <div className="min-h-screen pt-10 pb-20">
@@ -70,8 +111,8 @@ export default function Home() {
 
       {loading ? (
         <>
-          <LoadingSkeleton />
-          <LoadingSkeleton />
+          <LoadingSkeleton variant="row" />
+          <LoadingSkeleton variant="row" />
         </>
       ) : (
         <>
@@ -87,9 +128,20 @@ export default function Home() {
               title="For You"
               movies={personalizedMovies}
               matchScores={personalizedScores}
+              onLikeToggle={toggleLike}
+              likedIds={likedIds}
+              onWatchlistToggle={toggleWatchlist}
+              watchlistIds={watchlistIds}
             />
           ) : null}
-          <FilmstripRow title="Trending Now" movies={allMovies} />
+          <FilmstripRow
+            title="Trending Now"
+            movies={allMovies}
+            onLikeToggle={toggleLike}
+            likedIds={likedIds}
+            onWatchlistToggle={toggleWatchlist}
+            watchlistIds={watchlistIds}
+          />
         </>
       )}
     </div>

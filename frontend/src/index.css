@@ -27,6 +27,47 @@
   scroll-snap-align: start;
 }
 
+/* Cinematic movie cards */
+.movie-card {
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.03) inset,
+    0 12px 32px -18px rgba(0, 0, 0, 0.9);
+  transition: transform 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
+}
+.movie-card:hover {
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.05) inset,
+    0 20px 48px -20px rgba(0, 0, 0, 0.95), 0 0 24px -12px rgba(139, 41, 66, 0.45);
+}
+
+/* Film grain used by the poster fallback surface */
+.poster-grain {
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  opacity: 0.16;
+  mix-blend-mode: overlay;
+}
+
+/* Skeleton shimmer for loading states */
+.skeleton-card {
+  min-width: 0;
+}
+.skeleton-shimmer {
+  background: linear-gradient(
+    100deg,
+    rgba(255, 255, 255, 0) 30%,
+    rgba(255, 255, 255, 0.05) 50%,
+    rgba(255, 255, 255, 0) 70%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-sweep 1.6s infinite linear;
+}
+@keyframes skeleton-sweep {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;

@@ -1,6 +1,16 @@
 import MovieCard from "./MovieCard";
 
-export default function FilmstripRow({ title, movies, matchScores, confidenceScores, onFeedback }) {
+export default function FilmstripRow({
+  title,
+  movies,
+  matchScores,
+  confidenceScores,
+  onFeedback,
+  onLikeToggle,
+  likedIds,
+  onWatchlistToggle,
+  watchlistIds,
+}) {
   if (!movies || movies.length === 0) return null;
 
   return (
@@ -14,9 +24,14 @@ export default function FilmstripRow({ title, movies, matchScores, confidenceSco
           <MovieCard
             key={m.id}
             movie={m}
+            className="shrink-0 w-44 sm:w-52 md:w-56"
             matchPercentage={matchScores ? matchScores[m.id] : null}
             confidence={confidenceScores ? confidenceScores[m.id] : null}
             onFeedback={onFeedback}
+            liked={likedIds ? likedIds.has(m.id) : undefined}
+            onLikeToggle={onLikeToggle}
+            inWatchlist={watchlistIds ? watchlistIds.has(m.id) : undefined}
+            onWatchlistToggle={onWatchlistToggle}
           />
         ))}
       </div>
