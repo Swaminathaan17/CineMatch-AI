@@ -25,6 +25,8 @@ app.include_router(movies.router, prefix="/movies", tags=["movies"])
 app.include_router(
     recommendations.router, prefix="/recommendations", tags=["recommendations"]
 )
+# Registration order matters: literal paths (/search, /search/tmdb, /trending,
+# /personalized) are declared before /{movie_id} catch-alls inside the routers.
 app.include_router(sentiment.router, prefix="/sentiment", tags=["sentiment"])
 app.include_router(users.router, prefix="/users", tags=["users"])
 app.include_router(discovery.router, prefix="/discovery", tags=["discovery"])

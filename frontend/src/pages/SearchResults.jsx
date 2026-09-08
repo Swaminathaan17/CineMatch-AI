@@ -55,6 +55,7 @@ export default function SearchResults() {
         if (cancelled) return;
         setResults(enriched);
         setSource(res.source);
+        api.recordSearch(query, res.source, (res.results || []).length).catch(() => {});
       } catch {
         if (!cancelled) setError("We couldn't reach the search service right now.");
       } finally {

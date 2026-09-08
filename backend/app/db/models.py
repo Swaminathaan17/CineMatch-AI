@@ -1,7 +1,7 @@
 """SQLite persistence models for users, feedback, and the growing movie library."""
 from datetime import datetime, timezone
 
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Float, Text
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Float, Text, UniqueConstraint
 from sqlalchemy.orm import declarative_base, relationship
 
 Base = declarative_base()
@@ -63,6 +63,64 @@ class RecommendationFeedback(Base):
     source_movie_id = Column(Integer, nullable=False)
     recommended_movie_id = Column(Integer, nullable=False)
     feedback = Column(String, nullable=False)  # 'up' | 'down'
+    created_at = Column(DateTime, default=utcnow)
+
+
+class MovieRating(Base):
+    """Explicit 1-5 star rating a user gives a movie.
+
+    One rating per (user, movie): re-rating overwrites the value and refreshes
+    updated_at rather than stacking duplicate rows. created_at keeps the first
+    rating time, updated_at the latest, so the future recommendation engine can
+    weight by rating recency.
+    """
+
+    __tablename__ = "movie_ratings"
+    __table_args__ = (
+        UniqueConstraint("user_id", "movie_id", name="uq_movie_ratings_user_movie"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    movie_id = Column(Integer, nullable=False)
+    rating = Column(Float, nullable=False)  # 1-5
+    created_at = Column(DateTime, default=utcnow)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
+
+
+class UserSearchQuery(Base):
+    """Search-question history used for personalization.
+
+    Each distinct search is preserved as its own row. Repeating the same query
+    within a short window refreshes the existing row's timestamp instead of
+    inserting duplicate spam.
+    """
+
+    __tablename__ = "user_search_queries"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    query = Column(String, nullable=False)
+    result_source = Column(String, nullable=True)  # 'local' | 'tmdb' | None
+    result_count = Column(Integer, nullable=True)
+    created_at = Column(DateTime, default=utcnow)
+
+
+class WatchlistEvent(Base):
+    """Add/remove history for watchlist signals.
+
+    The watchlist_items table stays the source of truth for current state;
+    this table is an append-only log of what changed and when so the future
+    recommendation engine can weigh watchlist behavior.
+    """
+
+    __tablename__ = "watchlist_events"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    movie_id = Column(Integer, nullable=False)
+    movie_title = Column(String, nullable=True)
+    action = Column(String, nullable=False)  # 'added' | 'removed'
     created_at = Column(DateTime, default=utcnow)
 
 

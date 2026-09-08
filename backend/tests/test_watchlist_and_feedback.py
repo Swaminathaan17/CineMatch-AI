@@ -106,3 +106,63 @@ def test_hybrid_recommendations_include_confidence_field(sample_movie_id):
         assert "confidence" in body[0]
         assert body[0]["confidence"]["label"] in ("High", "Medium", "Low")
         assert 0 <= body[0]["confidence"]["score"] <= 1
+
+
+def test_feedback_is_upserted_not_duplicated(sample_movie_id):
+    """Repeated feedback on the same (user, source, recommended) triple must stay
+    a single DB row whose value reflects the latest submission."""
+    from uuid import uuid4
+
+    from app.db.models import RecommendationFeedback, User
+    from app.db.session import SessionLocal
+
+    session_id = f"pytest-fb-upsert-{uuid4().hex}"
+    target = sample_movie_id + 1
+
+    for _ in range(3):
+        res = client.post(
+            "/recommendations/feedback",
+            json={
+                "session_id": session_id,
+                "source_movie_id": sample_movie_id,
+                "recommended_movie_id": target,
+                "feedback": "up",
+            },
+        )
+        assert res.status_code == 200
+
+    res = client.post(
+        "/recommendations/feedback",
+        json={
+            "session_id": session_id,
+            "source_movie_id": sample_movie_id,
+            "recommended_movie_id": target,
+            "feedback": "down",
+        },
+    )
+    assert res.status_code == 200
+
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.session_id == session_id).first()
+        assert user is not None
+        rows = (
+            db.query(RecommendationFeedback)
+            .filter(
+                RecommendationFeedback.user_id == user.id,
+                RecommendationFeedback.source_movie_id == sample_movie_id,
+                RecommendationFeedback.recommended_movie_id == target,
+            )
+            .all()
+        )
+        assert len(rows) == 1  # upserted, never duplicated
+        assert rows[0].feedback == "down"  # latest submission wins
+    finally:
+        user = db.query(User).filter(User.session_id == session_id).first()
+        if user:
+            db.query(RecommendationFeedback).filter(
+                RecommendationFeedback.user_id == user.id
+            ).delete(synchronize_session=False)
+            db.query(User).filter(User.id == user.id).delete(synchronize_session=False)
+        db.commit()
+        db.close()

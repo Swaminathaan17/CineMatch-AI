@@ -5,7 +5,6 @@ import math
 from pathlib import Path
 
 import pandas as pd
-from sqlalchemy.orm import Session
 
 from app.db.models import LibraryMovie, MovieAsset
 from app.db.session import SessionLocal
@@ -14,6 +13,7 @@ from ml_engine.content_similarity import ContentSimilarityEngine
 from ml_engine.personalization import PersonalizationEngine
 from ml_engine.nl_query_parser import NLQueryEngine
 from ml_engine.hybrid_ranker import compute_hybrid_score, recency_score
+from ml_engine.recommendation_explainer import build_recommendation_explanations
 
 DATA_PATH = Path(__file__).resolve().parent.parent.parent.parent / "data"
 
@@ -213,27 +213,30 @@ class RecommendationService:
 
     def rank_personalized_candidates(
         self,
-        liked_movie_ids: list[int],
-        favorite_genres: list[str],
-        downvoted: set[int] | None = None,
-        feedback_map: dict[int, str] | None = None,
+        signals: dict,
         top_n: int = 10,
     ) -> list[dict]:
-        """Phase 3 ranking for the home feed.
+        """Phase 3 ranking for the home feed, driven by Phase 2.2 signals.
 
-        Uses the user's taste vector plus rating/popularity/freshness. It does
-        not call external review APIs, keeping the home page fast; detailed
+        Consumes a batched signal bundle (user_service.get_signal_bundle): a
+        behavioral taste profile supplies per-movie preference_match, and the
+        same bundle supplies direct per-movie nudges (ratings, watchlist, views,
+        recommendation feedback). All signal loading happens once, up front - no
+        database queries happen inside the ranking loop.
+
+        Does not call external review APIs, keeping the home page fast; detailed
         movie pages can still use the full sentiment-aware hybrid endpoint.
         """
         self._load()
-        downvoted = downvoted or set()
-        feedback_map = feedback_map or {}
-        negative_ids = [mid for mid, fb in feedback_map.items() if fb == "down"]
-        preference_scores = self._personalization.preference_scores(liked_movie_ids, favorite_genres, negative_ids)
+        downvoted = set(signals.get("downvoted") or [])
+        feedback_map = {movie_id: fb for movie_id, fb, _ in signals.get("feedback", [])}
+        preference_scores = self._personalization.behavior_scores(signals)
+        behavior_boosts = self._personalization.movie_behavior_boosts(signals)
+        weights = self._personalization.aggregate_signal_weights(signals)
         if not preference_scores:
             return []
 
-        liked_set = set(liked_movie_ids)
+        liked_set = set(signals.get("liked_ids") or [])
         df = self._df.copy()
         popularity_max = float(pd.to_numeric(df.get("popularity", 0), errors="coerce").fillna(0).max() or 1)
         ranked = []
@@ -250,7 +253,7 @@ class RecommendationService:
                 popularity_max_in_batch=popularity_max,
                 preference_match=pref,
                 recency=recency_score(row.get("release_date")),
-                feedback_boost=0.03 if feedback_map.get(movie_id) == "up" else 0.0,
+                feedback_boost=behavior_boosts.get(movie_id, 0.0),
             )
             ranked.append({
                 "id": movie_id,
@@ -268,7 +271,21 @@ class RecommendationService:
         ranked.sort(key=lambda r: r["match_percentage"], reverse=True)
         for item in ranked:
             item["_raw_score"] = item["match_percentage"] / 100
-        return self.diversify(ranked, top_n=top_n)
+        selected = self.diversify(ranked, top_n=top_n)
+        # Transparent "why this movie?" per result, from the same signal bundle
+        # and weights the ranking already used - no extra DB/API work.
+        explained = build_recommendation_explanations(
+            selected,
+            self._personalization,
+            signals,
+            weights=weights,
+            preference_scores=preference_scores,
+            behavior_boosts=behavior_boosts,
+            mode="personalized",
+        )
+        for item, explanation in zip(selected, explained):
+            item["explanation"] = explanation
+        return selected
 
     def get_trending_fallback(self, top_n: int = 10) -> list[dict]:
         self._load()
@@ -285,6 +302,7 @@ class RecommendationService:
                 "title": r["title"],
                 "poster_path": r.get("poster_path"),
                 "source": r.get("source", "local"),
+                "explanation": {"primary": "Popular right now", "secondary": None},
             }
             for _, r in top.iterrows()
         ]

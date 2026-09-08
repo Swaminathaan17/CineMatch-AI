@@ -177,35 +177,47 @@ export default function MovieCard({
           </div>
         </div>
 
-        {showFooter && (
-          <div className="px-3 py-2.5 bg-panel-raised">
-            {genre && (
-              <p className="text-[10px] font-mono uppercase tracking-wider text-gold/80 mb-1 truncate">
-                {genre}
-              </p>
-            )}
-            {confidence && (
-              <p
-                className={`font-mono text-[10px] uppercase tracking-wider ${
-                  CONFIDENCE_COLOR[confidence.label] || "text-smoke"
-                }`}
-              >
-                {confidence.label} confidence
-              </p>
-            )}
-            {movie.reasons?.[0] && (
-              <p
-                className="text-smoke text-[10px] mt-0.5 line-clamp-1"
-                title={movie.reasons.join(" • ")}
-              >
-                {movie.reasons[0]}
-              </p>
-            )}
-            {feedbackGiven === "down" && (
-              <p className="text-smoke text-[10px] mt-0.5">Won't suggest this again</p>
-            )}
-          </div>
-        )}
+{showFooter && (
+            <div className="px-3 py-2.5 bg-panel-raised">
+              {genre && (
+                <p className="text-[10px] font-mono uppercase tracking-wider text-gold/80 mb-1 truncate">
+                  {genre}
+                </p>
+              )}
+              {confidence && (
+                <p
+                  className={`font-mono text-[10px] uppercase tracking-wider ${
+                    CONFIDENCE_COLOR[confidence.label] || "text-smoke"
+                  }`}
+                >
+                  {confidence.label} confidence
+                </p>
+              )}
+              {movie.explanation?.primary && (
+                <p
+                  className="text-gold-soft/90 text-[10px] font-mono mt-0.5 line-clamp-1"
+                  title={
+                    movie.explanation.secondary
+                      ? `${movie.explanation.primary} • ${movie.explanation.secondary}`
+                      : movie.explanation.primary
+                  }
+                >
+                  {movie.explanation.primary}
+                </p>
+              )}
+              {!movie.explanation?.primary && movie.reasons?.[0] && (
+                <p
+                  className="text-smoke text-[10px] mt-0.5 line-clamp-1"
+                  title={movie.reasons.join(" • ")}
+                >
+                  {movie.reasons[0]}
+                </p>
+              )}
+              {feedbackGiven === "down" && (
+                <p className="text-smoke text-[10px] mt-0.5">Won't suggest this again</p>
+              )}
+            </div>
+          )}
       </div>
     </Link>
   );

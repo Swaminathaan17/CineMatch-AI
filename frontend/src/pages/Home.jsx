@@ -47,6 +47,7 @@ export default function Home() {
       release_date: r.release_date || "",
       source: r.source || "local",
       reasons: r.reasons || [],
+      explanation: r.explanation || null,
       runtime: r.runtime ?? null,
       vote_average: r.vote_average ?? null,
       genres: r.genres ?? "",

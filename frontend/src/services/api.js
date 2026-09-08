@@ -62,6 +62,35 @@ export const api = {
         interaction_type: "liked",
       }),
     }),
+  recordView: (movieId) =>
+    request("/users/interactions", {
+      method: "POST",
+      body: JSON.stringify({
+        session_id: getSessionId(),
+        movie_id: movieId,
+        interaction_type: "viewed",
+      }),
+    }),
+  recordSearch: (query, resultSource = null, resultCount = null) =>
+    request("/users/searches", {
+      method: "POST",
+      body: JSON.stringify({
+        session_id: getSessionId(),
+        query,
+        result_source: resultSource,
+        result_count: resultCount,
+      }),
+    }),
+  rateMovie: (movieId, rating) =>
+    request("/users/ratings", {
+      method: "POST",
+      body: JSON.stringify({
+        session_id: getSessionId(),
+        movie_id: movieId,
+        rating,
+      }),
+    }),
+  getRatings: () => request(`/users/ratings?session_id=${getSessionId()}`),
   getPreferences: () => request(`/users/preferences?session_id=${getSessionId()}`),
 
   addToWatchlist: (movieId, movieTitle) =>

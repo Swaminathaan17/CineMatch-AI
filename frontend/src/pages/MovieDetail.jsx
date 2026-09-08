@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
@@ -68,11 +68,13 @@ export default function MovieDetail() {
   const [liked, setLiked] = useState(false);
   const [inWatchlist, setInWatchlist] = useState(false);
   const [isLibraryMovie, setIsLibraryMovie] = useState(false);
+  const [userRating, setUserRating] = useState(null);
   const [loading, setLoading] = useState(true);
   const [libraryBusy, setLibraryBusy] = useState(false);
   const [trailer, setTrailer] = useState(null);
   const [watchProviders, setWatchProviders] = useState(null);
   const [playingTrailer, setPlayingTrailer] = useState(false);
+  const viewLoggedFor = useRef(new Set());
 
   const loadRecommendations = useCallback(
     async (libraryMovie) => {
@@ -129,6 +131,14 @@ export default function MovieDetail() {
         setMovie(movieData);
         setIsLibraryMovie(libraryMovie);
 
+        // Real user signal: a successfully loaded detail page counts as a view.
+        // Guarded with a ref so StrictMode's double-invoked effects and retries
+        // never log the same movie more than once per mount.
+        if (!viewLoggedFor.current.has(movieId)) {
+          viewLoggedFor.current.add(movieId);
+          api.recordView(movieId).catch(() => {});
+        }
+
         // Library rows don't carry trailer + watch providers - enrich from the
         // TMDB detail endpoint (TMDB-only rows already have them).
         if (movieData.source === "tmdb_external") {
@@ -158,6 +168,11 @@ export default function MovieDetail() {
         if (!cancelled && prefs?.liked_movie_ids) {
           setLiked(prefs.liked_movie_ids.includes(movieId));
         }
+
+        const ratings = await api.getRatings().catch(() => null);
+        if (!cancelled && ratings?.ratings) {
+          setUserRating(ratings.ratings[movieId] ?? null);
+        }
       } catch (e) {
         console.error(e);
         if (!cancelled) setMovie(null);
@@ -174,6 +189,15 @@ export default function MovieDetail() {
   const handleLike = async () => {
     await api.likeMovie(movieId);
     setLiked(true);
+  };
+
+  const handleRate = async (rating) => {
+    setUserRating(rating);
+    try {
+      await api.rateMovie(movieId, rating);
+    } catch {
+      // Keep the optimistic UI as-is; the rating endpoint is best-effort here.
+    }
   };
 
   const handleWatchlistToggle = async () => {
@@ -400,6 +424,29 @@ export default function MovieDetail() {
                 >
                   {inWatchlist ? <BookmarkCheck size={18} /> : <Bookmark size={18} />}
                 </button>
+
+                <div
+                  className="flex items-center gap-0.5"
+                  role="radiogroup"
+                  aria-label="Rate this movie from 1 to 5 stars"
+                >
+                  {[1, 2, 3, 4, 5].map((n) => (
+                    <button
+                      key={n}
+                      onClick={() => handleRate(n)}
+                      aria-label={`Rate ${n} star${n > 1 ? "s" : ""}`}
+                      aria-pressed={userRating === n}
+                      className={`p-1 rounded transition-transform hover:scale-110 ${
+                        userRating != null && n <= userRating ? "text-gold" : "text-smoke hover:text-gold"
+                      }`}
+                    >
+                      <Star size={18} fill={userRating != null && n <= userRating ? "currentColor" : "none"} />
+                    </button>
+                  ))}
+                  <span className="text-xs text-smoke ml-1">
+                    {userRating ? `You rated ${userRating}/5` : "Rate it"}
+                  </span>
+                </div>
 
                 {!isOriginalMovie && (
                   <button

@@ -6,14 +6,16 @@ from pydantic import BaseModel
 from app.services.recommendation_service import recommendation_service
 from app.services.review_fetcher import fetch_reviews
 from app.services.tmdb_client import tmdb_client, TMDBError
+from app.services.sentiment_cache import sentiment_cache
 from app.services.data_prep import tmdb_movie_to_row
 from app.services import user_service
 from app.db.session import get_db
 from app.config import settings
 from ml_engine.explainer import explain_content_match, to_match_percentage
-from ml_engine.aspect_sentiment import analyze_overall
+from ml_engine.aspect_sentiment import analyze_overall, analyze_aspects
 from ml_engine.sentiment_model import SentimentModelNotTrainedError
 from ml_engine.hybrid_ranker import compute_hybrid_score, compute_confidence, recency_score
+from ml_engine.recommendation_explainer import build_recommendation_explanations
 
 router = APIRouter()
 
@@ -30,27 +32,24 @@ def get_personalized_recommendations(
     session_id: str, top_n: int = 10, db: Session = Depends(get_db)
 ):
     """
-    Personalized recommendations built from the user's liked movies + favorite
-    genres. Falls back to a clearly-labeled "trending" list for cold-start
-    users instead of pretending to personalize with no signal.
+    Personalized recommendations built from the user's behavioral signals
+    (likes, ratings, watchlist, views, searches, recommendation feedback).
+    Falls back to a clearly-labeled "trending" list for cold-start users
+    instead of pretending to personalize with no signal.
     """
-    liked_ids = user_service.get_liked_movie_ids(db, session_id)
-    genres = user_service.get_favorite_genres(db, session_id)
-    downvoted = user_service.get_downvoted_movie_ids(db, session_id)
-    feedback_map = user_service.get_feedback_map(db, session_id)
+    signals = user_service.get_signal_bundle(db, session_id)
+    downvoted = signals["downvoted"]
 
-    if not liked_ids and not genres:
+    if not user_service.has_personalization_signal(signals):
         trending = recommendation_service.get_trending_fallback(top_n=top_n)
         trending = [m for m in trending if m["id"] not in downvoted]
         return {"mode": "trending", "reason": "Not enough preference data yet - showing trending titles.", "results": trending}
 
-    personalized = recommendation_service.rank_personalized_candidates(
-        liked_ids, genres, downvoted=downvoted, feedback_map=feedback_map, top_n=top_n
-    )
+    personalized = recommendation_service.rank_personalized_candidates(signals, top_n=top_n)
     if not personalized:
         trending = recommendation_service.get_trending_fallback(top_n=top_n)
         trending = [m for m in trending if m["id"] not in downvoted]
-        return {"mode": "trending", "reason": "Liked movies not found in current dataset - showing trending titles.", "results": trending}
+        return {"mode": "trending", "reason": "Signals don't map to movies in the current dataset - showing trending titles.", "results": trending}
 
     return {"mode": "personalized", "results": personalized}
 
@@ -132,43 +131,82 @@ async def get_hybrid_recommendations(
     except ValueError:
         raise HTTPException(status_code=404, detail="Movie not in local dataset")
 
-    liked_ids: list[int] = []
-    genres: list[str] = []
-    feedback_map: dict[int, str] = {}
+    preference_scores: dict[int, float] = {}
+    behavior_boosts: dict[int, float] = {}
+    signals: dict | None = None
     if session_id:
-        liked_ids = user_service.get_liked_movie_ids(db, session_id)
-        genres = user_service.get_favorite_genres(db, session_id)
-        downvoted = user_service.get_downvoted_movie_ids(db, session_id)
-        feedback_map = user_service.get_feedback_map(db, session_id)
-        candidates = [c for c in candidates if c["id"] not in downvoted and c["id"] not in set(liked_ids)]
+        signals = user_service.get_signal_bundle(db, session_id)
+        liked_ids = signals["liked_ids"]
+        downvoted = signals["downvoted"]
+        liked_set = set(liked_ids)
+        candidates = [c for c in candidates if c["id"] not in downvoted and c["id"] not in liked_set]
+        preference_scores = recommendation_service._personalization.behavior_scores(signals)
+        behavior_boosts = recommendation_service._personalization.movie_behavior_boosts(signals)
 
     if not candidates:
         return []
 
     rows = {c["id"]: recommendation_service.get_movie_row(c["id"]) for c in candidates}
     popularity_max = max((rows[c["id"]].get("popularity") or 0 for c in candidates), default=1)
-    negative_ids = [mid for mid, fb in feedback_map.items() if fb == "down"]
-    preference_scores = (
-        recommendation_service._personalization.preference_scores(liked_ids, genres, negative_ids)
-        if session_id else {}
-    )
 
-    # Reviews are independent network calls. Fetch them concurrently so a
-    # wider accuracy-oriented candidate pool does not multiply page latency.
-    review_lists = await asyncio.gather(*(fetch_reviews(c["id"]) for c in candidates))
+    # Sentiment is computed once per movie and reused for the TTL: cache hits
+    # skip both the TMDB review fetch and the model prediction. Cached payloads
+    # carry an internal _review_count so the confidence estimate stays exact.
+    def sentiment_key(cid: int) -> tuple:
+        return sentiment_cache.build_key(cid, min_reviews=settings.min_reviews_for_sentiment)
+
+    payload_by_id: dict[int, dict] = {}
+    to_fetch: list[int] = []
+    for c in candidates:
+        cid = int(c["id"])
+        cached = sentiment_cache.get(sentiment_key(cid))
+        if cached is not None:
+            payload_by_id[cid] = cached
+        else:
+            to_fetch.append(cid)
+
+    if to_fetch:
+        fetched_lists = await asyncio.gather(*(fetch_reviews(cid) for cid in to_fetch))
+        for cid, reviews in zip(to_fetch, fetched_lists):
+            if len(reviews) >= settings.min_reviews_for_sentiment:
+                try:
+                    overall = analyze_overall(reviews)
+                    aspects = analyze_aspects(reviews, min_sentences=settings.min_reviews_for_sentiment)
+                except SentimentModelNotTrainedError:
+                    payload_by_id[cid] = {"movie_id": cid, "_review_count": len(reviews)}
+                else:
+                    payload = {
+                        "movie_id": cid,
+                        "overall": overall,
+                        "aspects": aspects,
+                        "_review_count": len(reviews),
+                    }
+                    sentiment_cache.set(sentiment_key(cid), payload)
+                    payload_by_id[cid] = payload
+            else:
+                payload = {
+                    "status": "insufficient_data",
+                    "review_count": len(reviews),
+                    "message": (
+                        f"Only {len(reviews)} review(s) found - need at least "
+                        f"{settings.min_reviews_for_sentiment} for a reliable score."
+                    ),
+                    "_review_count": len(reviews),
+                }
+                sentiment_cache.set(sentiment_key(cid), payload)
+                payload_by_id[cid] = payload
 
     ranked = []
-    for c, reviews in zip(candidates, review_lists):
-        row = rows[c["id"]]
-        sentiment_pct = None
-        if len(reviews) >= settings.min_reviews_for_sentiment:
-            try:
-                overall = analyze_overall(reviews)
-                sentiment_pct = overall.get("positive_pct")
-            except SentimentModelNotTrainedError:
-                sentiment_pct = None  # degrade gracefully, don't fail the whole request
+    for c in candidates:
+        cid = int(c["id"])
+        row = rows[cid]
+        payload = payload_by_id[cid]
+        overall = payload.get("overall")
+        sentiment_pct = overall.get("positive_pct") if overall else None
+        review_count = payload.get("_review_count", payload.get("review_count", 0))
 
-        preference_match = preference_scores.get(c["id"]) if preference_scores else None
+        preference_match = preference_scores.get(cid) if preference_scores else None
+        recency = recency_score(row.get("release_date"))
         score = compute_hybrid_score(
             content_similarity=c["similarity_score"],
             sentiment_positive_pct=sentiment_pct,
@@ -176,13 +214,13 @@ async def get_hybrid_recommendations(
             popularity=row.get("popularity") or 0,
             popularity_max_in_batch=popularity_max,
             preference_match=preference_match,
-            recency=recency_score(row.get("release_date")),
-            feedback_boost=0.03 if feedback_map.get(c["id"]) == "up" else 0.0,
+            recency=recency,
+            feedback_boost=behavior_boosts.get(cid, 0.0),
         )
         confidence = compute_confidence(
             content_similarity=c["similarity_score"],
             has_sentiment=sentiment_pct is not None,
-            review_count=len(reviews),
+            review_count=review_count,
             popularity=row.get("popularity") or 0,
             popularity_max_in_batch=popularity_max,
         )
@@ -192,7 +230,7 @@ async def get_hybrid_recommendations(
             reasons.append("Strong match with your taste profile")
         if (row.get("vote_average") or 0) >= 7.5:
             reasons.append("Highly rated by audiences")
-        if recency_score(row.get("release_date")) >= 0.8:
+        if recency >= 0.8:
             reasons.append("Relatively recent release")
         if sentiment_pct is not None:
             reasons.append(f"{sentiment_pct}% positive audience sentiment")
@@ -201,7 +239,7 @@ async def get_hybrid_recommendations(
 
         ranked.append(
             {
-                "id": c["id"],
+                "id": cid,
                 "title": c["title"],
                 "match_percentage": min(99, round(score["final_score"] * 100)),
                 "score_breakdown": score["components"],
@@ -213,7 +251,23 @@ async def get_hybrid_recommendations(
     ranked.sort(key=lambda r: r["match_percentage"], reverse=True)
     for item in ranked:
         item["_raw_score"] = item["match_percentage"] / 100
-    return recommendation_service.diversify(ranked, top_n=top_n)
+    diversified = recommendation_service.diversify(ranked, top_n=top_n)
+
+    if signals is not None:
+        weights = recommendation_service._personalization.aggregate_signal_weights(signals)
+        explained = build_recommendation_explanations(
+            diversified,
+            recommendation_service._personalization,
+            signals,
+            weights=weights,
+            preference_scores=preference_scores,
+            behavior_boosts=behavior_boosts,
+            mode="hybrid",
+        )
+        for item, explanation in zip(diversified, explained):
+            item["explanation"] = explanation
+
+    return diversified
 
 
 @router.post("/feedback")

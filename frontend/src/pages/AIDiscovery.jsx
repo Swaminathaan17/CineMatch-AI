@@ -40,6 +40,12 @@ export default function AIDiscovery() {
   const interpreted = result?.explanation?.interpreted_as || [];
   const mode = result?.mode;
   const results = result?.results || [];
+  const genres = intent?.genres || [];
+  const moods = intent?.moods || [];
+  const tone = intent?.tone || [];
+  const themes = intent?.themes || [];
+  const reference = intent?.reference_title;
+  const confidence = intent?.confidence;
 
   return (
     <div className="min-h-screen pt-16 pb-24 px-6 md:px-12">
@@ -102,12 +108,73 @@ export default function AIDiscovery() {
             className="max-w-6xl mx-auto"
           >
             <div className="bg-panel border border-white/5 rounded-md p-5 mb-8">
-              <div className="flex items-center gap-2 mb-3">
+              <div className="flex items-center gap-2 mb-4">
                 <SlidersHorizontal size={14} className="text-gold" />
                 <span className="font-mono text-xs uppercase tracking-wider text-gold">
                   I understood
                 </span>
               </div>
+
+              {(moods.length > 0 || genres.length > 0 || tone.length > 0 || reference) && (
+                <div className="space-y-2.5 mb-5">
+                  {moods.length > 0 && (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-gold/80 w-16 shrink-0">
+                        Mood
+                      </span>
+                      {moods.map((m) => (
+                        <span
+                          key={m}
+                          className="text-xs text-gold-soft border border-gold/30 rounded-full px-3 py-1"
+                        >
+                          {m}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {genres.length > 0 && (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-ivory/60 w-16 shrink-0">
+                        Genres
+                      </span>
+                      {genres.map((g) => (
+                        <span
+                          key={g}
+                          className="text-xs text-ivory border border-white/10 rounded-full px-3 py-1"
+                        >
+                          {g}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {tone.length > 0 && (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-smoke w-16 shrink-0">
+                        Tone
+                      </span>
+                      {tone.map((t) => (
+                        <span
+                          key={t}
+                          className="text-xs text-smoke border border-white/10 rounded-full px-3 py-1"
+                        >
+                          {t}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {reference && (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-smoke w-16 shrink-0">
+                        Similar to
+                      </span>
+                      <span className="text-xs text-ivory border border-gold/40 rounded-full px-3 py-1">
+                        {reference}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div className="flex flex-wrap gap-2">
                 {interpreted.map((x) => (
                   <span key={x} className="text-xs text-ivory border border-white/10 rounded-full px-3 py-1">
@@ -124,8 +191,19 @@ export default function AIDiscovery() {
                     ≥ {intent.min_rating}/10
                   </span>
                 )}
+                {themes.map((t) => (
+                  <span key={t} className="text-xs text-ivory border border-white/10 rounded-full px-3 py-1">
+                    {t}
+                  </span>
+                ))}
               </div>
               <p className="text-smoke text-xs mt-4">
+                {typeof confidence === "number" && confidence >= 0.4 && (
+                  <>
+                    Intent confidence:{" "}
+                    <span className="text-ivory">{Math.round(confidence * 100)}%</span> ·{" "}
+                  </>
+                )}
                 Semantic engine: <span className="text-ivory">{mode}</span> · TMDB:{" "}
                 <span className="text-ivory">{result.sources?.tmdb ? "used" : "not needed"}</span>
               </p>
