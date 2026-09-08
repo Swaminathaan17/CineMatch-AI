@@ -128,7 +128,7 @@ class NLQueryEngine:
           self._try_load_semantic_model()
 
   
-        def search(self, query: str, top_n: int = 10) -> dict:
+    def search(self, query: str, top_n: int = 10) -> dict:
         mood_hints = extract_mood_hints(query)
 
         # Semantic AI discovery is intentionally lazy so normal movie,
@@ -136,6 +136,8 @@ class NLQueryEngine:
         self._ensure_semantic_model()
 
         if self.mode == "semantic" and self._embedder is not None:
+            query_vec = self._embedder.encode([query])
+            scores = cosine_similarity(query_vec, self._movie_embeddings)[0]
         else:
             query_vec = self._tfidf_vectorizer.transform([query])
             scores = cosine_similarity(query_vec, self._tfidf_matrix)[0]
