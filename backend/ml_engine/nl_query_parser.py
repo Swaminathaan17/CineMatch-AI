@@ -90,7 +90,8 @@ class NLQueryEngine:
         self._tfidf_vectorizer = None
         self._tfidf_matrix = None
 
-        self._try_load_semantic_model()
+        # Build only the lightweight fallback index at startup.
+        # The expensive semantic model is loaded lazily on first AI discovery query.
         self._build_fallback_index()
 
     def _try_load_semantic_model(self):
@@ -119,13 +120,22 @@ class NLQueryEngine:
         )
         self._tfidf_vectorizer = TfidfVectorizer(stop_words="english", max_features=5000, ngram_range=(1, 2), sublinear_tf=True)
         self._tfidf_matrix = self._tfidf_vectorizer.fit_transform(text_source)
+    def _ensure_semantic_model(self):
+          """Lazy-load the semantic model only when AI discovery is actually used."""
+          if self._embedder is not None:
+            return
 
-    def search(self, query: str, top_n: int = 10) -> dict:
+          self._try_load_semantic_model()
+
+  
+        def search(self, query: str, top_n: int = 10) -> dict:
         mood_hints = extract_mood_hints(query)
 
+        # Semantic AI discovery is intentionally lazy so normal movie,
+        # trending, and recommendation endpoints are not blocked at startup.
+        self._ensure_semantic_model()
+
         if self.mode == "semantic" and self._embedder is not None:
-            query_vec = self._embedder.encode([query])
-            scores = cosine_similarity(query_vec, self._movie_embeddings)[0]
         else:
             query_vec = self._tfidf_vectorizer.transform([query])
             scores = cosine_similarity(query_vec, self._tfidf_matrix)[0]
