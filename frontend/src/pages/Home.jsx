@@ -1,9 +1,14 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../services/api";
 import { enrichMovies } from "../services/movieEnrichment";
 import FilmstripRow from "../components/movie/FilmstripRow";
+import MovieGrid from "../components/movie/MovieGrid";
 import LoadingSkeleton from "../components/ui/LoadingSkeleton";
 import ErrorState from "../components/ui/ErrorState";
+
+const TRENDING_COUNT = 50;
+const MAX_ATTEMPTS = 3;
+const RETRY_DELAYS_MS = [800, 1600];
 
 export default function Home() {
   const [allMovies, setAllMovies] = useState([]);
@@ -12,25 +17,40 @@ export default function Home() {
   const [error, setError] = useState(null);
   const [likedIds, setLikedIds] = useState(new Set());
   const [watchlistIds, setWatchlistIds] = useState(new Set());
+  const loadGenRef = useRef(0);
 
-  const load = async () => {
+  const load = async (attempt = 1) => {
+    const gen = ++loadGenRef.current;
     setLoading(true);
     setError(null);
     try {
-      const movies = await enrichMovies(await api.getTrending(20));
-      setAllMovies(movies);
-
-      const rec = await api.getPersonalized(10);
-      setPersonalized({ ...rec, results: await enrichMovies(rec.results || []) });
-
+      const movies = await enrichMovies(await api.getTrending(TRENDING_COUNT), {
+        fillMissingPosters: true,
+      });
+      const rec = await api.getPersonalized(10).catch(() => null);
       const prefs = await api.getPreferences().catch(() => null);
-      if (prefs?.liked_movie_ids) setLikedIds(new Set(prefs.liked_movie_ids));
-
       const wl = await api.getWatchlist().catch(() => ({ results: [] }));
+      if (gen !== loadGenRef.current) return;
+
+      setAllMovies(movies);
+      if (rec) {
+        setPersonalized({ ...rec, results: await enrichMovies(rec.results || []) });
+      } else {
+        setPersonalized(null);
+      }
+      if (prefs?.liked_movie_ids) setLikedIds(new Set(prefs.liked_movie_ids));
       setWatchlistIds(new Set((wl.results || []).map((m) => Number(m.id))));
+      setLoading(false);
     } catch (e) {
+      if (gen !== loadGenRef.current) return;
+      if (attempt < MAX_ATTEMPTS) {
+        const delayMs = RETRY_DELAYS_MS[attempt - 1] ?? 2000;
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+        if (gen !== loadGenRef.current) return;
+        await load(attempt + 1);
+        return;
+      }
       setError(e.message);
-    } finally {
       setLoading(false);
     }
   };
@@ -113,7 +133,7 @@ export default function Home() {
       {loading ? (
         <>
           <LoadingSkeleton variant="row" />
-          <LoadingSkeleton variant="row" />
+          <LoadingSkeleton variant="grid" count={10} />
         </>
       ) : (
         <>
@@ -135,14 +155,21 @@ export default function Home() {
               watchlistIds={watchlistIds}
             />
           ) : null}
-          <FilmstripRow
-            title="Trending Now"
-            movies={allMovies}
-            onLikeToggle={toggleLike}
-            likedIds={likedIds}
-            onWatchlistToggle={toggleWatchlist}
-            watchlistIds={watchlistIds}
-          />
+          <section className="mb-10">
+            <div className="flex items-center gap-3 mb-4 px-6 md:px-12">
+              <h2 className="font-display text-xl md:text-2xl text-ivory">Trending Now</h2>
+              <div className="h-px flex-1 bg-gradient-to-r from-white/10 to-transparent" />
+            </div>
+            <div className="px-6 md:px-12">
+              <MovieGrid
+                movies={allMovies}
+                onLikeToggle={toggleLike}
+                likedIds={likedIds}
+                onWatchlistToggle={toggleWatchlist}
+                watchlistIds={watchlistIds}
+              />
+            </div>
+          </section>
         </>
       )}
     </div>

@@ -9,16 +9,25 @@ function getSessionId() {
   return id;
 }
 
-async function request(path, options = {}) {
-  const res = await fetch(`${BASE_URL}${path}`, {
-    headers: { "Content-Type": "application/json" },
-    ...options,
-  });
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`API error ${res.status}: ${body}`);
+async function request(path, options = {}, timeoutMs = 20000) {
+  const { timeoutMs: optTimeout, ...fetchOptions } = options;
+  const effectiveTimeout = optTimeout ?? timeoutMs;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), effectiveTimeout);
+  try {
+    const res = await fetch(`${BASE_URL}${path}`, {
+      headers: { "Content-Type": "application/json" },
+      ...fetchOptions,
+      signal: fetchOptions.signal || controller.signal,
+    });
+    if (!res.ok) {
+      const body = await res.text();
+      throw new Error(`API error ${res.status}: ${body}`);
+    }
+    return res.json();
+  } finally {
+    clearTimeout(timer);
   }
-  return res.json();
 }
 
 export const api = {
