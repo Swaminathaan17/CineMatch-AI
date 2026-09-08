@@ -1,0 +1,11 @@
+id,title,genres,cast,director,keywords
+1,Inception,"Action,Sci-Fi,Thriller","Leonardo DiCaprio,Joseph Gordon-Levitt,Elliot Page","Christopher Nolan","dream,heist,subconscious,mind-bending"
+2,Interstellar,"Adventure,Drama,Sci-Fi","Matthew McConaughey,Anne Hathaway,Jessica Chastain","Christopher Nolan","space,time travel,wormhole,survival"
+3,The Dark Knight,"Action,Crime,Drama","Christian Bale,Heath Ledger,Aaron Eckhart","Christopher Nolan","superhero,vigilante,chaos,gotham"
+4,The Prestige,"Drama,Mystery,Sci-Fi","Christian Bale,Hugh Jackman,Scarlett Johansson","Christopher Nolan","magic,rivalry,obsession,illusion"
+5,Shutter Island,"Mystery,Thriller,Drama","Leonardo DiCaprio,Mark Ruffalo,Ben Kingsley","Martin Scorsese","asylum,detective,paranoia,twist ending"
+6,The Wolf of Wall Street,"Biography,Comedy,Crime","Leonardo DiCaprio,Jonah Hill,Margot Robbie","Martin Scorsese","wall street,fraud,excess,greed"
+7,Goodfellas,"Biography,Crime,Drama","Robert De Niro,Ray Liotta,Joe Pesci","Martin Scorsese","mafia,crime family,betrayal,new york"
+8,La La Land,"Comedy,Drama,Musical","Ryan Gosling,Emma Stone","Damien Chazelle","jazz,dreams,romance,hollywood"
+9,Whiplash,"Drama,Music","Miles Teller,J.K. Simmons","Damien Chazelle","jazz,ambition,mentorship,obsession"
+10,Mad Max: Fury Road,"Action,Adventure,Sci-Fi","Tom Hardy,Charlize Theron","George Miller","post-apocalyptic,chase,wasteland,survival"
