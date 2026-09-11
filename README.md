@@ -312,8 +312,6 @@ Add the required API configuration:
 TMDB_API_KEY=your_tmdb_api_key
 ```
 
-Never commit your real API key to GitHub.
-
 ### 4. Start the Backend
 
 ```bash
@@ -438,14 +436,11 @@ These are **possible extensions**, not part of the current project scope.
 **Swaminathaan M**
 
 Computer Science & Engineering Student
-Chennai Institute of Technology
 
 Interested in:
 
 * Machine Learning
-* Artificial Intelligence
 * Full-Stack Development
-* Data Structures & Algorithms
 * Building real-world software
 
 ---
